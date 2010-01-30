@@ -5,6 +5,25 @@
     =========
     Detect Rotated Quicktime/MP4 files. This script will spit out a rotation
     angle if one can be found.
+
+    A present for Thomas: You can now pass in a rotaion angle and this script
+    will write the new rotation matrix for you.
+    
+    Usage:
+    #read rotation angle
+    bash-3.2$ ./qtrotate.py thomas.mp4 
+    0
+
+    #set new rotation angle
+    bash-3.2$ ./qtrotate.py thomas.mp4 90
+    changing transformation matrix to 90 degrees
+    writing new 90-degree matrix!
+    writing new 90-degree matrix!
+
+    #read new rotation angle
+    bash-3.2$ ./qtrotate.py thomas.mp4 
+    90
+
 """
 
 import math
@@ -88,7 +107,7 @@ def find_atoms(size, datastream):
             # Ignore this atom, seek to the end of it.
             datastream.seek(atom_size - 8, os.SEEK_CUR)
 
-def get_rotation(infilename):
+def get_set_rotation(infilename, set_degrees=None):
     """
         Get and return the degrees of rotation in a file, or -1 if it cannot
         be determined.
@@ -96,7 +115,7 @@ def get_rotation(infilename):
         See ISO 14496-12:2005 and 
         http://developer.apple.com/documentation/QuickTime/QTFF/QTFFChap2/chapter_3_section_2.html#//apple_ref/doc/uid/TP40000939-CH204-56313
     """
-    datastream = open(infilename, "rb")
+    datastream = open(infilename, "r+b")
     
     # Get the top level atom index
     index = get_index(datastream)
@@ -133,27 +152,38 @@ def get_rotation(infilename):
         
         datastream.read(16)
         
-        matrix = list(struct.unpack(">9l", datastream.read(36)))
+        matrix = list(struct.unpack(">9l", datastream.read(36)))        
+
+        if ('tkhd' == atom_type) and set_degrees:
+            #we only handle 90 degrees right now
+            assert 90 == set_degrees
+            
+            if 90 == set_degrees:
+                print "writing new 90-degree matrix!"
+                value = struct.pack(">9l", 0, 65536, 0, -65536, 0, 0, 23592960, 0, 1073741824)
+                datastream.seek(-36, 1)
+                datastream.write(value)
+        else:        
+            for x in range(9):
+                if (x + 1) % 3:
+                    #print x, matrix[x]
+                    matrix[x] = float(matrix[x]) / (1 << 16)
+                else:
+                    #print x, matrix[x]
+                    matrix[x] = float(matrix[x]) / (1 << 30)
         
-        for x in range(9):
-            if (x + 1) % 3:
-                #print x, matrix[x]
-                matrix[x] = float(matrix[x]) / (1 << 16)
-            else:
-                #print x, matrix[x]
-                matrix[x] = float(matrix[x]) / (1 << 30)
-        
-        #print matrix
-        
-        #for row in [matrix[:3], matrix[3:6], matrix[6:]]:
-        #    print "\t".join([str(round(item, 1)) for item in row])
-        
-        if atom_type in ["mvhd", "tkhd"]:
-            deg = -math.degrees(math.asin(matrix[3])) % 360
-            if not deg:
-                deg = math.degrees(math.acos(matrix[0]))
-            if deg:
-                degrees.add(deg)
+            #print matrix
+            
+    
+            #for row in [matrix[:3], matrix[3:6], matrix[6:]]:
+            #    print "\t".join([str(round(item, 1)) for item in row])
+            
+            if atom_type in ["mvhd", "tkhd"]:
+                deg = -math.degrees(math.asin(matrix[3])) % 360
+                if not deg:
+                    deg = math.degrees(math.acos(matrix[0]))
+                if deg:
+                    degrees.add(deg)
         
         if atom_type == "mvhd":
             datastream.read(28)
@@ -168,14 +198,21 @@ def get_rotation(infilename):
         return -1
 
 if __name__ == "__main__":
-    try:
-        deg = get_rotation(sys.argv[1])
+    try:    
+        if 3 == len(sys.argv):
+            set_degrees = int(sys.argv[2])
+            print "changing transformation matrix to %d degrees" % set_degrees
+            deg = get_set_rotation(sys.argv[1], set_degrees)
+        else:
+            deg = get_set_rotation(sys.argv[1])
+
+            if deg == -1:
+                deg = 0
+        
+            print int(deg)
+            
     except Exception, e:
         print e
         raise SystemExit(1)
 
-    if deg == -1:
-        deg = 0
-
-    print int(deg)
 
