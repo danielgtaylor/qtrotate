@@ -4,11 +4,10 @@
     QT Rotate
     =========
     Detect Rotated Quicktime/MP4 files. This script will spit out a rotation
-    angle if one can be found.
-
-    A present for Thomas: You can now pass in a rotaion angle and this script
-    will write the new rotation matrix for you.
+    angle if one can be found. It can also write an new rotation angle.
     
+    NOTE that translation info will be LOST if a new rotation angle is written.
+
     Usage:
     #read rotation angle
     bash-3.2$ ./qtrotate.py thomas.mp4 
@@ -16,9 +15,6 @@
 
     #set new rotation angle
     bash-3.2$ ./qtrotate.py thomas.mp4 90
-    changing transformation matrix to 90 degrees
-    writing new 90-degree matrix!
-    writing new 90-degree matrix!
 
     #read new rotation angle
     bash-3.2$ ./qtrotate.py thomas.mp4 
@@ -154,15 +150,14 @@ def get_set_rotation(infilename, set_degrees=None):
         
         matrix = list(struct.unpack(">9l", datastream.read(36)))        
 
-        if ('tkhd' == atom_type) and set_degrees:
-            #we only handle 90 degrees right now
-            assert 90 == set_degrees
-            
-            if 90 == set_degrees:
-                print "writing new 90-degree matrix!"
-                value = struct.pack(">9l", 0, 65536, 0, -65536, 0, 0, 23592960, 0, 1073741824)
-                datastream.seek(-36, 1)
-                datastream.write(value)
+        if ('tkhd' == atom_type) and (set_degrees != None):
+            radians = math.radians(set_degrees)
+            cos_deg = int((1<<16)*math.cos(radians))
+            sin_deg = int((1<<16)*math.sin(radians))
+            value = struct.pack(">9l", cos_deg, sin_deg, 0, -sin_deg, cos_deg, 0, 0, 0, (1<<30))
+            datastream.seek(-36, 1)
+            datastream.write(value)
+
         else:        
             for x in range(9):
                 if (x + 1) % 3:
@@ -177,6 +172,7 @@ def get_set_rotation(infilename, set_degrees=None):
     
             #for row in [matrix[:3], matrix[3:6], matrix[6:]]:
             #    print "\t".join([str(round(item, 1)) for item in row])
+            #print ""
             
             if atom_type in ["mvhd", "tkhd"]:
                 deg = -math.degrees(math.asin(matrix[3])) % 360
@@ -189,7 +185,7 @@ def get_set_rotation(infilename, set_degrees=None):
             datastream.read(28)
         elif atom_type == "tkhd":
             datastream.read(8)
-    
+
     if len(degrees) == 0:
         return 0
     elif len(degrees) == 1:
@@ -199,9 +195,9 @@ def get_set_rotation(infilename, set_degrees=None):
 
 if __name__ == "__main__":
     try:    
-        if 3 == len(sys.argv):
+        if 3==len(sys.argv):
             set_degrees = int(sys.argv[2])
-            print "changing transformation matrix to %d degrees" % set_degrees
+            # print "Forcing transformation matrix to %d degrees..." % set_degrees
             deg = get_set_rotation(sys.argv[1], set_degrees)
         else:
             deg = get_set_rotation(sys.argv[1])
